@@ -1,0 +1,4 @@
+apify-client
+openai>=1.40.0
+pydantic
+python-dotenv
