@@ -58,6 +58,11 @@ app.add_middleware(
 class GenerateRequest(BaseModel):
     niche: str | None = None
     instagram_url: str | None = None
+    confirmed_hashtags: list[str] | None = None  # pre-confirmed from /analyse-profile
+
+
+class AnalyseProfileRequest(BaseModel):
+    instagram_url: str
 
 
 @app.get("/")
@@ -79,28 +84,52 @@ def status(user=Depends(verify_token)):
     }
 
 
+@app.post("/analyse-profile")
+def analyse_profile(req: AnalyseProfileRequest, user=Depends(verify_token)):
+    """
+    Step 1 of profile mode: scrape the profile and derive niche + hashtags.
+    Returns the derived niche and hashtags for the user to review/edit before
+    the full scrape starts.
+    """
+    profile_url = req.instagram_url.strip()
+    if not profile_url.startswith("https://www.instagram.com/"):
+        raise HTTPException(status_code=400, detail="Please provide a valid Instagram profile URL.")
+
+    profile_reels = scrape_profile_reels(profile_url)
+    if not profile_reels:
+        raise HTTPException(status_code=404, detail="Could not scrape that profile. Make sure it's a public account.")
+
+    niche_data = derive_niche_from_profile(profile_reels)
+    return {
+        "derived_niche": niche_data["niche"],
+        "hashtags": niche_data["hashtags"],
+    }
+
+
 @app.post("/generate")
 def generate(req: GenerateRequest, user=Depends(verify_token)):
-    if req.instagram_url:
-        # Profile mode: analyze the user's own account to derive niche + hashtags
-        profile_url = req.instagram_url.strip()
-        if not profile_url.startswith("https://www.instagram.com/"):
-            raise HTTPException(status_code=400, detail="Please provide a valid Instagram profile URL (https://www.instagram.com/username/).")
-
-        profile_reels = scrape_profile_reels(profile_url)
-        if not profile_reels:
-            raise HTTPException(status_code=404, detail="Could not scrape that profile. Make sure it's a public account.")
-
-        niche_data = derive_niche_from_profile(profile_reels)
-        niche    = niche_data["niche"]
-        hashtags = niche_data["hashtags"]
-        print(f"Profile mode: derived niche='{niche}', hashtags={hashtags}")
+    if req.niche and req.confirmed_hashtags:
+        # Profile mode step 2: user reviewed and confirmed the derived niche
+        niche    = req.niche.strip()
+        hashtags = req.confirmed_hashtags
 
     elif req.niche:
         niche = req.niche.strip()
         if not niche:
             raise HTTPException(status_code=400, detail="Niche cannot be empty.")
         hashtags = expand_hashtags(niche)
+
+    elif req.instagram_url:
+        # Legacy single-step profile mode (kept for compatibility)
+        profile_url = req.instagram_url.strip()
+        if not profile_url.startswith("https://www.instagram.com/"):
+            raise HTTPException(status_code=400, detail="Please provide a valid Instagram profile URL.")
+        profile_reels = scrape_profile_reels(profile_url)
+        if not profile_reels:
+            raise HTTPException(status_code=404, detail="Could not scrape that profile. Make sure it's a public account.")
+        niche_data = derive_niche_from_profile(profile_reels)
+        niche    = niche_data["niche"]
+        hashtags = niche_data["hashtags"]
 
     else:
         raise HTTPException(status_code=400, detail="Provide either 'niche' or 'instagram_url'.")

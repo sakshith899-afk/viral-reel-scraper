@@ -85,8 +85,16 @@ def derive_niche_from_profile(profile_reels: list) -> dict:
                 {"role": "system", "content": "You are an Instagram content strategist who specializes in precise niche identification."},
                 {"role": "user", "content": f"""
 Analyze this Instagram creator's content and return:
-1. Their specific niche — be precise, not broad. E.g. "budget meal prep for college students" not just "food".
-2. The 4 best hashtags to find viral content in that exact niche (no spaces, no #, lowercase).
+1. Their specific niche — describe the TOPIC/SUBJECT they cover, not the format or platform.
+   BAD: "Telugu health podcasting" (that's a format, not a topic)
+   GOOD: "Telugu-language health and wellness tips" (that's the topic)
+   BAD: "YouTube content creation tips" (format)
+   GOOD: "personal finance for young Indians" (topic)
+   Be precise, not broad. If they cover multiple topics, pick the dominant one.
+
+2. The 4 best hashtags to find viral REELS about that topic (no spaces, no #, lowercase).
+   Avoid hashtags that are about content formats (e.g. avoid "podcast", "youtuber", "blogger").
+   Pick hashtags where the actual topic content goes viral.
 
 Their recent posts:
 {summary}
