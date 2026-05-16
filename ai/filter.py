@@ -16,12 +16,22 @@ def filter_reels_for_niche(reels: list, niche: str) -> list:
     irrelevant content, and engagement bait.
     Keeps only reels that provide actual value for the given niche.
     """
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GITHUB_TOKEN") or os.getenv("OPENAI_API_KEY")
+    is_github = bool(os.getenv("GITHUB_TOKEN"))
+
     if not api_key:
-        print("Warning: OPENAI_API_KEY not set. Skipping AI filtering and using heuristics.")
+        print("Warning: Neither GITHUB_TOKEN nor OPENAI_API_KEY is set. Skipping AI filtering and using heuristics.")
         return _heuristic_filter(reels)
 
-    client = OpenAI(api_key=api_key)
+    if is_github:
+        client = OpenAI(
+            base_url="https://models.inference.ai.azure.com",
+            api_key=api_key,
+        )
+        model_name = "gpt-4o-mini"
+    else:
+        client = OpenAI(api_key=api_key)
+        model_name = "gpt-4o-mini"
     filtered_reels = []
     print(f"Starting AI filtering for {len(reels)} reels...")
 
@@ -55,7 +65,7 @@ def filter_reels_for_niche(reels: list, niche: str) -> list:
 
         try:
             response = client.beta.chat.completions.parse(
-                model="gpt-4o-mini", # Using mini for cost-effective filtering
+                model=model_name,
                 messages=[
                     {"role": "system", "content": "You are a strict data quality filter for social media content."},
                     {"role": "user", "content": prompt}
