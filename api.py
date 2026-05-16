@@ -44,6 +44,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[
         "https://viral-reel-scraper.netlify.app",
+        "https://sakshith899-afk.github.io",
         "http://localhost:5500",
         "http://127.0.0.1:5500",
         "http://localhost:3000",
