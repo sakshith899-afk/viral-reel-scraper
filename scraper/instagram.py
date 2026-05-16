@@ -8,7 +8,15 @@ load_dotenv()
 
 def _extract_reel(item: dict) -> dict | None:
     """Normalize a raw Apify item into our internal reel dict. Returns None if not a video."""
-    if not (item.get("type") == "Video" or item.get("isVideo") or item.get("videoUrl")):
+    is_video = (
+        item.get("type") == "Video"
+        or item.get("isVideo")
+        or item.get("videoUrl")
+        or item.get("videoDuration") is not None
+        or item.get("videoViewCount") is not None
+        or item.get("playCount") is not None
+    )
+    if not is_video:
         return None
 
     views    = int(item.get("videoViewCount") or item.get("playCount") or item.get("videoPlayCount") or 0)
@@ -86,12 +94,11 @@ def scrape_instagram_reels(niche: str, hashtags: list | None = None, max_results
             continue
 
         for item in client.dataset(run["defaultDatasetId"]).iterate_items():
-            # instagram-hashtag-scraper wraps posts under topPosts / latestPosts arrays
-            for post in item.get("topPosts", []):
-                reel = _extract_reel(post)
-                if reel and reel["url"] and reel["url"] not in seen_urls:
-                    seen_urls.add(reel["url"])
-                    all_results.append(reel)
+            # instagram-hashtag-scraper returns individual posts as dataset items
+            reel = _extract_reel(item)
+            if reel and reel["url"] and reel["url"] not in seen_urls:
+                seen_urls.add(reel["url"])
+                all_results.append(reel)
 
     all_results.sort(key=lambda r: r["viewCount"], reverse=True)
     print(f"Total reels collected: {len(all_results)} across {len(hashtags)} hashtag(s)")
