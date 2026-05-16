@@ -5,6 +5,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+
 class ReelIdea(BaseModel):
     title: str
     concept_explanation: str
@@ -12,84 +13,93 @@ class ReelIdea(BaseModel):
     why_it_works: str
     how_to_make_it_authentic: str
 
+
 class IdeaGenerationResult(BaseModel):
     ideas: list[ReelIdea]
 
+
 def generate_ideas_from_filtered_data(filtered_reels: list, niche: str) -> IdeaGenerationResult:
     """
-    Takes the highly relevant, filtered list of viral reels and asks the LLM
-    to generate 10 distinct, actionable content ideas based on them.
+    Sends the filtered viral reels to an LLM and asks for 10 actionable content ideas.
+    Supports GitHub Models (free) or OpenAI (paid).
     """
     api_key = os.getenv("GITHUB_TOKEN") or os.getenv("OPENAI_API_KEY")
-    is_github = bool(os.getenv("GITHUB_TOKEN"))
 
     if not api_key:
-        print("Warning: Neither GITHUB_TOKEN nor OPENAI_API_KEY is set. Returning mock ideas.")
+        print("Warning: No API key set. Returning mock ideas.")
         return _get_mock_ideas()
 
-    if is_github:
-        client = OpenAI(
-            base_url="https://models.inference.ai.azure.com",
-            api_key=api_key,
-        )
-        model_name = "gpt-4o"
-    else:
-        client = OpenAI(api_key=api_key)
-        model_name = "gpt-4o"
-
     if not filtered_reels:
-        print("Error: No filtered reels available to generate ideas from.")
+        print("No filtered reels to generate from.")
         return IdeaGenerationResult(ideas=[])
 
-    print("Generating ideas based on verified viral content...")
+    is_github = bool(os.getenv("GITHUB_TOKEN"))
+    client = OpenAI(
+        base_url="https://models.inference.ai.azure.com" if is_github else None,
+        api_key=api_key,
+    )
 
-    # Prepare the context for the LLM
+    valid_urls = {r.get("url", "") for r in filtered_reels}
+
     context_data = ""
     for i, reel in enumerate(filtered_reels, 1):
-        context_data += f"\nReel {i}:\n"
-        context_data += f"URL: {reel['url']}\n"
-        context_data += f"Caption: {reel['caption']}\n"
-        context_data += f"Engagement: {reel.get('likeCount', 0)} likes, {reel.get('commentCount', 0)} comments on {reel.get('viewCount', 0)} views\n"
+        context_data += (
+            f"\nReel {i}:\n"
+            f"  URL:        {reel.get('url', '')}\n"
+            f"  Caption:    {reel.get('caption', '')}\n"
+            f"  Engagement: {reel.get('likeCount', 0):,} likes, "
+            f"{reel.get('commentCount', 0):,} comments on "
+            f"{reel.get('viewCount', 0):,} views\n"
+        )
 
     prompt = f"""
-    You are an expert social media strategist.
-    I will provide you with a list of verified, high-quality viral Instagram Reels in the '{niche}' niche.
+You are an expert Instagram content strategist.
 
-    Your task is to analyze these proven concepts and generate exactly 10 unique, actionable ideas for new Instagram Reels.
+Below is a list of verified viral Instagram Reels in the '{niche}' niche.
+Generate exactly 10 unique, actionable ideas for new Reels based on these.
 
-    For EACH idea, you must provide:
-    1. A catchy title.
-    2. A clear explanation of the concept (what the creator should do in the video).
-    3. The URL of the specific viral reel from the provided list that inspired this idea (as 'proof' that the concept works).
-    4. An explanation of *why* the original reel worked so well (e.g., psychological trigger, visual hook, relatable pain point).
-    5. Specific advice on how the creator can rewrite or present this concept to make it *authentic* to their own voice, rather than just blindly copying the original.
+For EACH idea provide:
+1. A catchy title.
+2. A clear concept explanation (what the creator should do in the video).
+3. The URL of the specific reel from the list below that inspired this idea — copy the URL exactly as shown, do not invent one.
+4. Why the original reel worked (psychological trigger, visual hook, pain point, etc.).
+5. How the creator can make it authentic to their own voice instead of just copying.
 
-    Here is the verified viral data:
-    {context_data}
-    """
+Verified viral data:
+{context_data}
+"""
 
+    print(f"Generating ideas (source: {'GitHub Models' if is_github else 'OpenAI'})...")
     try:
         response = client.beta.chat.completions.parse(
-            model=model_name,
+            model="gpt-4o",
             messages=[
                 {"role": "system", "content": "You are an expert Instagram content strategist."},
-                {"role": "user", "content": prompt}
+                {"role": "user",   "content": prompt},
             ],
             response_format=IdeaGenerationResult,
         )
-        return response.choices[0].message.parsed
+        result = response.choices[0].message.parsed
+
+        real_urls = list(valid_urls - {""})
+        for idea in result.ideas:
+            if idea.original_viral_reel_url not in valid_urls and real_urls:
+                idea.original_viral_reel_url = real_urls[0]
+
+        return result
 
     except Exception as e:
         print(f"Error generating ideas: {e}")
         return IdeaGenerationResult(ideas=[])
 
-def _get_mock_ideas():
+
+def _get_mock_ideas() -> IdeaGenerationResult:
     return IdeaGenerationResult(ideas=[
         ReelIdea(
-            title="The 'Counter-Intuitive' Tip",
-            concept_explanation="Start by stating a common belief in your niche, then debunk it visually.",
-            original_viral_reel_url="https://instagram.com/reel/mock3",
-            why_it_works="Pattern interruption. It challenges what people think they know.",
-            how_to_make_it_authentic="Share a personal story of when you made the common mistake and how fixing it changed your results."
+            title="The Counter-Intuitive Tip",
+            concept_explanation="State a common belief in your niche, then visually debunk it.",
+            original_viral_reel_url="https://www.instagram.com/reel/mock3/",
+            why_it_works="Pattern interruption — challenges what people think they know.",
+            how_to_make_it_authentic="Share a personal story of when you believed the myth and how fixing it changed your results.",
         )
     ])
