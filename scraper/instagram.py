@@ -10,6 +10,7 @@ def scrape_instagram_reels(niche: str, max_results: int = 20):
     Scrapes Instagram reels based on a given niche/keyword via Apify.
     Falls back to mock data if APIFY_API_TOKEN is not set.
     """
+    # Read token inside the function so load_dotenv() above always runs first
     apify_token = os.getenv("APIFY_API_TOKEN")
 
     if not apify_token:
@@ -18,9 +19,11 @@ def scrape_instagram_reels(niche: str, max_results: int = 20):
 
     client = ApifyClient(apify_token)
 
+    # Use directUrls to go straight to the hashtag page — avoids Google search
+    # which gets blocked and returns 0 results
+    hashtag = niche.lower().replace(" ", "")
     run_input = {
-        "search": niche,
-        "searchType": "hashtag",
+        "directUrls": [f"https://www.instagram.com/explore/tags/{hashtag}/"],
         "resultsType": "posts",
         "resultsLimit": max_results,
     }
@@ -35,6 +38,7 @@ def scrape_instagram_reels(niche: str, max_results: int = 20):
     print("Scraping completed. Fetching results...")
     results = []
     for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+        # Only keep video/reel content
         if item.get("type") == "Video" or item.get("isVideo"):
             results.append({
                 "id":           item.get("id", ""),
@@ -46,6 +50,7 @@ def scrape_instagram_reels(niche: str, max_results: int = 20):
                 "author":       item.get("ownerUsername", ""),
             })
 
+    # Sort by views descending so the most viral reels go first
     results.sort(key=lambda r: r["viewCount"], reverse=True)
     return results
 
