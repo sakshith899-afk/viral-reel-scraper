@@ -20,12 +20,22 @@ def generate_ideas_from_filtered_data(filtered_reels: list, niche: str) -> IdeaG
     Takes the highly relevant, filtered list of viral reels and asks the LLM
     to generate 10 distinct, actionable content ideas based on them.
     """
-    api_key = os.getenv("OPENAI_API_KEY")
+    api_key = os.getenv("GITHUB_TOKEN") or os.getenv("OPENAI_API_KEY")
+    is_github = bool(os.getenv("GITHUB_TOKEN"))
+
     if not api_key:
-        print("Warning: OPENAI_API_KEY not set. Returning mock ideas.")
+        print("Warning: Neither GITHUB_TOKEN nor OPENAI_API_KEY is set. Returning mock ideas.")
         return _get_mock_ideas()
 
-    client = OpenAI(api_key=api_key)
+    if is_github:
+        client = OpenAI(
+            base_url="https://models.inference.ai.azure.com",
+            api_key=api_key,
+        )
+        model_name = "gpt-4o"
+    else:
+        client = OpenAI(api_key=api_key)
+        model_name = "gpt-4o"
 
     if not filtered_reels:
         print("Error: No filtered reels available to generate ideas from.")
@@ -60,7 +70,7 @@ def generate_ideas_from_filtered_data(filtered_reels: list, niche: str) -> IdeaG
 
     try:
         response = client.beta.chat.completions.parse(
-            model="gpt-4o", # Using full gpt-4o for complex generation
+            model=model_name,
             messages=[
                 {"role": "system", "content": "You are an expert Instagram content strategist."},
                 {"role": "user", "content": prompt}
