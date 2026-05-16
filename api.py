@@ -10,7 +10,8 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from jose import jwt, JWTError
 
-from scraper.instagram import scrape_instagram_reels
+from scraper.instagram import scrape_instagram_reels, scrape_profile_reels
+from ai.hashtags import expand_hashtags, derive_niche_from_profile
 from ai.filter import filter_reels_for_niche
 from ai.generator import generate_ideas_from_filtered_data
 
@@ -55,7 +56,8 @@ app.add_middleware(
 
 
 class GenerateRequest(BaseModel):
-    niche: str
+    niche: str | None = None
+    instagram_url: str | None = None
 
 
 @app.get("/")
@@ -79,17 +81,40 @@ def status(user=Depends(verify_token)):
 
 @app.post("/generate")
 def generate(req: GenerateRequest, user=Depends(verify_token)):
-    niche = req.niche.strip()
-    if not niche:
-        raise HTTPException(status_code=400, detail="Niche cannot be empty.")
+    if req.instagram_url:
+        # Profile mode: analyze the user's own account to derive niche + hashtags
+        profile_url = req.instagram_url.strip()
+        if not profile_url.startswith("https://www.instagram.com/"):
+            raise HTTPException(status_code=400, detail="Please provide a valid Instagram profile URL (https://www.instagram.com/username/).")
 
-    raw_reels = scrape_instagram_reels(niche, max_results=30)
+        profile_reels = scrape_profile_reels(profile_url)
+        if not profile_reels:
+            raise HTTPException(status_code=404, detail="Could not scrape that profile. Make sure it's a public account.")
+
+        niche_data = derive_niche_from_profile(profile_reels)
+        niche    = niche_data["niche"]
+        hashtags = niche_data["hashtags"]
+        print(f"Profile mode: derived niche='{niche}', hashtags={hashtags}")
+
+    elif req.niche:
+        niche = req.niche.strip()
+        if not niche:
+            raise HTTPException(status_code=400, detail="Niche cannot be empty.")
+        hashtags = expand_hashtags(niche)
+
+    else:
+        raise HTTPException(status_code=400, detail="Provide either 'niche' or 'instagram_url'.")
+
+    raw_reels = scrape_instagram_reels(niche, hashtags=hashtags, max_results=30)
     if not raw_reels:
-        raise HTTPException(status_code=404, detail="No reels found for this niche.")
+        raise HTTPException(status_code=404, detail="No reels found. Try again shortly or use a broader niche.")
 
     filtered_reels = filter_reels_for_niche(raw_reels, niche)
     if not filtered_reels:
-        raise HTTPException(status_code=404, detail="No reels passed the quality filter. Try a broader niche.")
+        raise HTTPException(status_code=404, detail="No viral reels found for this niche. Try a broader or more active niche.")
 
     result = generate_ideas_from_filtered_data(filtered_reels, niche)
-    return {"ideas": [idea.model_dump() for idea in result.ideas]}
+    return {
+        "ideas": [idea.model_dump() for idea in result.ideas],
+        "derived_niche": niche,
+    }
